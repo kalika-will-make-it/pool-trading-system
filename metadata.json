@@ -1,0 +1,6 @@
+{
+  "name": "TZX Traders Investment System",
+  "description": "An interactive trading pool investment network virtual simulator with package selections, wallet payouts, and automated simulated withdrawals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

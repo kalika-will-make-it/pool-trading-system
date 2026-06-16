@@ -1,0 +1,201 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default catch-all rule to deny all read and write attempts by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY UTILITY FUNCTIONS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() && request.auth.token.email == 'ritamakaps@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrappedAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- COLLECTION VALIDATORS ---
+
+    // 1. User validation helper
+    function isValidUser(data) {
+      return data.keys().hasAll(['phoneNumber', 'username', 'email', 'isAdmin', 'wallet', 'createdAt']) 
+        && data.keys().size() == 6
+        && data.phoneNumber is string && data.phoneNumber.size() <= 20
+        && data.username is string && data.username.size() >= 2 && data.username.size() <= 50
+        && data.email is string && data.email.size() <= 100
+        && data.isAdmin is bool
+        && data.wallet is map
+        && data.wallet.keys().hasAll(['balance', 'totalDeposited', 'totalEarned', 'totalWithdrawn', 'phoneNumber']) 
+        && data.wallet.keys().size() == 5
+        && data.wallet.balance is number && data.wallet.balance >= 0
+        && data.wallet.totalDeposited is number && data.wallet.totalDeposited >= 0
+        && data.wallet.totalEarned is number && data.wallet.totalEarned >= 0
+        && data.wallet.totalWithdrawn is number && data.wallet.totalWithdrawn >= 0
+        && data.wallet.phoneNumber is string
+        && data.createdAt is string;
+    }
+
+    // 2. Investment validation helper
+    function isValidInvestment(data) {
+      return data.keys().hasAll(['id', 'userId', 'packageId', 'packageName', 'cost', 'totalExpectedProfit', 'durationDays', 'dailyPayout', 'createdAt', 'lastPayoutAt', 'payoutsClaimed', 'accruedAmount', 'status'])
+        && data.keys().size() == 13
+        && data.id is string && data.id.size() <= 64
+        && data.userId is string && data.userId.size() <= 128
+        && data.packageId is string && data.packageId.size() <= 64
+        && data.packageName is string && data.packageName.size() <= 64
+        && data.cost is number && data.cost >= 0
+        && data.totalExpectedProfit is number && data.totalExpectedProfit >= 0
+        && data.durationDays is int
+        && data.dailyPayout is number && data.dailyPayout >= 0
+        && data.createdAt is string
+        && data.lastPayoutAt is string
+        && data.payoutsClaimed is int
+        && data.accruedAmount is number && data.accruedAmount >= 0
+        && data.status in ['pending_approval', 'active', 'completed', 'rejected'];
+    }
+
+    // 3. Deposit validation helper
+    function isValidDeposit(data) {
+      return data.keys().hasAll(['id', 'userId', 'amount', 'refNumber', 'phoneNumber', 'status', 'createdAt'])
+        && data.keys().size() == 7
+        && data.id is string && data.id.size() <= 64
+        && data.userId is string && data.userId.size() <= 128
+        && data.amount is number && data.amount > 0
+        && data.refNumber is string && data.refNumber.size() <= 100
+        && data.phoneNumber is string
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.createdAt is string;
+    }
+
+    // 4. Withdrawal validation helper
+    function isValidWithdrawal(data) {
+      return data.keys().hasAll(['id', 'userId', 'amount', 'phoneNumber', 'requestedAt', 'status'])
+        && data.keys().size() == 6
+        && data.id is string && data.id.size() <= 64
+        && data.userId is string && data.userId.size() <= 128
+        && data.amount is number && data.amount > 0
+        && data.phoneNumber is string
+        && data.requestedAt is string
+        && data.status in ['pending', 'approved', 'completed', 'rejected'];
+    }
+
+    // --- RULES FOR COLLECTION PATHS ---
+
+    // 1. User Profiles Rule Block
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() 
+        && isValidId(userId)
+        && request.auth.uid == userId 
+        && isValidUser(incoming())
+        && (incoming().isAdmin == false || isBootstrappedAdmin() || isAdmin())
+        && incoming().wallet.balance == 0.0; // Enforce first register balance starts empty
+        
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          request.auth.uid == userId 
+          && isValidUser(incoming())
+          && (incoming().isAdmin == existing().isAdmin) // Block self admin scaling
+          && (incoming().email == existing().email) // Permanent identities
+          && (incoming().createdAt == existing().createdAt)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['wallet', 'username'])
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    // 2. Investment Pool Trackings
+    match /investments/{investmentId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn()
+        && isValidId(investmentId)
+        && incoming().userId == request.auth.uid
+        && isValidInvestment(incoming())
+        && (incoming().status == 'pending_approval' || isAdmin());
+        
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          existing().userId == request.auth.uid
+          && incoming().userId == existing().userId
+          && isValidInvestment(incoming())
+          && incoming().cost == existing().cost
+          && incoming().packageId == existing().packageId
+          && incoming().packageName == existing().packageName
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['accruedAmount', 'payoutsClaimed', 'lastPayoutAt', 'status'])
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    // 3. Deposits
+    match /deposits/{depositId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn()
+        && isValidId(depositId)
+        && incoming().userId == request.auth.uid
+        && isValidDeposit(incoming())
+        && (incoming().status == 'pending' || isAdmin());
+        
+      allow update: if isAdmin() && isValidDeposit(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 4. Withdrawals
+    match /withdrawals/{withdrawalId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn()
+        && isValidId(withdrawalId)
+        && incoming().userId == request.auth.uid
+        && isValidWithdrawal(incoming())
+        && (incoming().status == 'pending' || isAdmin());
+        
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          existing().userId == request.auth.uid
+          && incoming().userId == existing().userId
+          && isValidWithdrawal(incoming())
+          && incoming().amount == existing().amount
+          && incoming().requestedAt == existing().requestedAt
+          && existing().status == 'approved'
+          && incoming().status == 'completed'
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+  }
+}

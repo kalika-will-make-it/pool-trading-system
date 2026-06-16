@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Information and wallet balances of a platform member",
+      "type": "object",
+      "properties": {
+        "phoneNumber": { "type": "string", "description": "The phone number of the member used for mobile money transactions" },
+        "username": { "type": "string", "description": "Display name of the user" },
+        "email": { "type": "string", "description": "Email from Google Auth provider" },
+        "isAdmin": { "type": "boolean", "description": "Indicates administration level privileges" },
+        "wallet": {
+          "type": "object",
+          "properties": {
+            "balance": { "type": "number" },
+            "totalDeposited": { "type": "number" },
+            "totalEarned": { "type": "number" },
+            "totalWithdrawn": { "type": "number" },
+            "phoneNumber": { "type": "string" }
+          },
+          "required": ["balance", "totalDeposited", "totalEarned", "totalWithdrawn", "phoneNumber"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phoneNumber", "username", "email", "isAdmin", "wallet", "createdAt"]
+    },
+    "Investment": {
+      "title": "Investment Pool Record",
+      "description": "Active subscription to a yield farming trading pool",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "Firebase Auth UID of the investor" },
+        "packageId": { "type": "string" },
+        "packageName": { "type": "string" },
+        "cost": { "type": "number" },
+        "totalExpectedProfit": { "type": "number" },
+        "durationDays": { "type": "integer" },
+        "dailyPayout": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastPayoutAt": { "type": "string", "format": "date-time" },
+        "payoutsClaimed": { "type": "integer" },
+        "accruedAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending_approval", "active", "completed", "rejected"] }
+      },
+      "required": ["id", "userId", "packageId", "packageName", "cost", "totalExpectedProfit", "durationDays", "dailyPayout", "createdAt", "lastPayoutAt", "payoutsClaimed", "accruedAmount", "status"]
+    },
+    "Deposit": {
+      "title": "Deposit Ticket",
+      "description": "Manual deposit reference submission entry in review by Administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "refNumber": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "amount", "refNumber", "phoneNumber", "status", "createdAt"]
+    },
+    "Withdrawal": {
+      "title": "Withdrawal Ticket",
+      "description": "Profit transfer request submitted towards registered phone",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "phoneNumber": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "completed", "rejected"] }
+      },
+      "required": ["id", "userId", "amount", "phoneNumber", "requestedAt", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Self user profile document linked by Firebase Auth UID"
+    },
+    "/investments/{investmentId}": {
+      "schema": "Investment",
+      "description": "Investment trading pool tracking"
+    },
+    "/deposits/{depositId}": {
+      "schema": "Deposit",
+      "description": "Investor wallet top up records"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Transfer requests pending payouts"
+    }
+  }
+}
