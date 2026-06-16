@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
-import { Deposit, Withdrawal, Investment, InvestmentPackage, UserAccount } from '../types';
-import { CheckCircle2, XCircle, Clock, Check, X, ShieldAlert, Award, FileSearch, Coins, PiggyBank, BadgeAlert, ArrowUpRight, TrendingUp } from 'lucide-react';
+import { Deposit, Withdrawal, Investment, InvestmentPackage, UserAccount, SupportTicket } from '../types';
+import { CheckCircle2, XCircle, Clock, Check, X, ShieldAlert, Award, FileSearch, Coins, PiggyBank, BadgeAlert, ArrowUpRight, TrendingUp, HelpCircle } from 'lucide-react';
+import { SupportTicketComponent } from './SupportTicket';
 
 interface AdminPanelProps {
   deposits: Deposit[];
   withdrawals: Withdrawal[];
   investments: Investment[];
   users: UserAccount[];
+  tickets: SupportTicket[];
+  currentUser: UserAccount;
   onApproveDeposit: (id: string) => void;
   onRejectDeposit: (id: string) => void;
   onApproveWithdrawal: (id: string) => void;
   onRejectWithdrawal: (id: string) => void;
   onApproveInvestment: (id: string) => void;
   onRejectInvestment: (id: string) => void;
+  onRespondToTicket: (id: string, response: string) => Promise<void>;
+  onCloseTicket: (id: string) => Promise<void>;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -20,19 +25,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   withdrawals,
   investments,
   users,
+  tickets,
+  currentUser,
   onApproveDeposit,
   onRejectDeposit,
   onApproveWithdrawal,
   onRejectWithdrawal,
   onApproveInvestment,
-  onRejectInvestment
+  onRejectInvestment,
+  onRespondToTicket,
+  onCloseTicket
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'deposits' | 'withdrawals' | 'packages' | 'users'>('deposits');
+  const [activeSubTab, setActiveSubTab] = useState<'deposits' | 'withdrawals' | 'packages' | 'users' | 'tickets'>('deposits');
 
   // Stats Counters
   const pendingDeposits = deposits.filter((d) => d.status === 'pending');
   const pendingWithdrawals = withdrawals.filter((w) => w.status === 'pending');
   const pendingInvestments = investments.filter((i) => i.status === 'pending_approval');
+  const pendingTickets = tickets.filter((t) => t.status === 'pending');
 
   const totalVaultDeposits = deposits
     .filter((d) => d.status === 'approved')
@@ -175,6 +185,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           Users Registry
+        </button>
+        <button
+          onClick={() => setActiveSubTab('tickets')}
+          className={`flex-1 rounded-lg py-1.5 cursor-pointer font-semibold transition flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'tickets' ? 'bg-blue-600/15 text-blue-450 border border-blue-500/20' : 'text-slate-450 hover:text-white'
+          }`}
+        >
+          Support Tickets ({pendingTickets.length})
         </button>
       </div>
 
@@ -417,6 +435,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* E. TICKETS TAB */}
+      {activeSubTab === 'tickets' && (
+        <SupportTicketComponent
+          currentUser={currentUser}
+          tickets={tickets}
+          onSubmitTicket={async () => {}} // admin won't submit tickets from admin dashboard
+          onCloseTicket={onCloseTicket}
+          isAdmin={true}
+          onRespondToTicket={onRespondToTicket}
+        />
       )}
 
     </div>

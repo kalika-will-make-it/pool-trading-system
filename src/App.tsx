@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { InvestmentPackage, UserWallet, UserAccount, Investment, Deposit, Withdrawal } from './types';
+import { InvestmentPackage, UserWallet, UserAccount, Investment, Deposit, Withdrawal, SupportTicket } from './types';
 import { INVESTMENT_PACKAGES, PAYMENT_PHONE_NUMBER, PLATFORM_NAME } from './data';
 import { Header } from './components/Header';
 import { WalletStats } from './components/WalletStats';
@@ -9,6 +9,7 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistory } from './components/TransactionHistory';
 import { Auth } from './components/Auth';
 import { AdminPanel } from './components/AdminPanel';
+import { SupportTicketComponent } from './components/SupportTicket';
 import { BookOpen, Smartphone, Award, Shield } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -32,6 +33,7 @@ export default function App() {
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
 
   // Modal visual controls
   const [selectedPkg, setSelectedPkg] = useState<InvestmentPackage | null>(null);
@@ -73,6 +75,7 @@ export default function App() {
         let unsubInvestments = () => {};
         let unsubDeposits = () => {};
         let unsubWithdrawals = () => {};
+        let unsubTickets = () => {};
 
         if (isAdminSession) {
           // ADMIN CLEARANCE PORTAL: Listen globally to all data streams
@@ -106,6 +109,14 @@ export default function App() {
             setWithdrawals(list);
           }, (err) => {
             handleFirestoreError(err, OperationType.LIST, 'withdrawals');
+          });
+
+          unsubTickets = onSnapshot(collection(db, 'support_tickets'), (snap) => {
+            const list: SupportTicket[] = [];
+            snap.forEach(d => list.push(d.data() as SupportTicket));
+            setSupportTickets(list);
+          }, (err) => {
+            handleFirestoreError(err, OperationType.LIST, 'support_tickets');
           });
 
         } else {
@@ -146,6 +157,18 @@ export default function App() {
             }
           );
 
+          unsubTickets = onSnapshot(
+            query(collection(db, 'support_tickets'), where('userId', '==', authUser.uid)),
+            (snap) => {
+              const list: SupportTicket[] = [];
+              snap.forEach(d => list.push(d.data() as SupportTicket));
+              setSupportTickets(list);
+            },
+            (err) => {
+              handleFirestoreError(err, OperationType.LIST, 'support_tickets');
+            }
+          );
+
           setRegisteredUsers([]);
         }
 
@@ -155,6 +178,7 @@ export default function App() {
           unsubInvestments();
           unsubDeposits();
           unsubWithdrawals();
+          unsubTickets();
         };
 
       } else {
@@ -165,6 +189,7 @@ export default function App() {
         setInvestments([]);
         setDeposits([]);
         setWithdrawals([]);
+        setSupportTickets([]);
       }
     });
 
@@ -494,6 +519,61 @@ export default function App() {
     }
   };
 
+  // --- SUPPORT TICKET ACTIONS ---
+
+  const handleSubmitSupportTicket = async (category: SupportTicket['category'], subject: string, message: string) => {
+    if (!currentUser || !currentUserId) return;
+
+    const ticketId = `tkt-${Date.now()}`;
+    const newTicket: SupportTicket = {
+      id: ticketId,
+      userId: currentUserId,
+      username: currentUser.username,
+      userEmail: currentUser.email,
+      subject,
+      message,
+      status: 'pending',
+      category,
+      createdAt: new Date().toISOString(),
+      adminResponse: '',
+      respondedAt: ''
+    };
+
+    try {
+      await setDoc(doc(db, 'support_tickets', ticketId), newTicket);
+      showNotification('💡 Support inquiry registered successfully!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `support_tickets/${ticketId}`);
+      throw err;
+    }
+  };
+
+  const handleCloseSupportTicket = async (ticketId: string) => {
+    try {
+      await updateDoc(doc(db, 'support_tickets', ticketId), {
+        status: 'closed'
+      });
+      showNotification('✅ Support ticket resolved and archived.');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `support_tickets/${ticketId}`);
+      throw err;
+    }
+  };
+
+  const handleRespondToSupportTicket = async (ticketId: string, responseText: string) => {
+    try {
+      await updateDoc(doc(db, 'support_tickets', ticketId), {
+        status: 'replied',
+        adminResponse: responseText,
+        respondedAt: new Date().toISOString()
+      });
+      showNotification('💬 Support answer dispatched successfully!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `support_tickets/${ticketId}`);
+      throw err;
+    }
+  };
+
   // Filter investor-specific list rows locally for UI displays
   const myInvestments = currentUser 
     ? investments.filter(inv => inv.userId === currentUserId)
@@ -550,12 +630,16 @@ export default function App() {
             withdrawals={withdrawals}
             investments={investments}
             users={registeredUsers}
+            tickets={supportTickets}
+            currentUser={currentUser}
             onApproveDeposit={handleApproveDeposit}
             onRejectDeposit={handleRejectDeposit}
             onApproveWithdrawal={handleApproveWithdrawal}
             onRejectWithdrawal={handleRejectWithdrawal}
             onApproveInvestment={handleApproveInvestment}
             onRejectInvestment={handleRejectInvestment}
+            onRespondToTicket={handleRespondToSupportTicket}
+            onCloseTicket={handleCloseSupportTicket}
           />
 
           <footer className="border-t border-slate-900 pt-8 text-center text-xs text-slate-600 font-sans">
@@ -618,6 +702,15 @@ export default function App() {
             onRejectDeposit={handleRejectDeposit}
             onClaimWithdrawal={handleClaimWithdrawal}
             onClaimYield={handleClaimYield}
+          />
+
+          {/* Customer Assistance Helpdesk & Support Tickets */}
+          <SupportTicketComponent
+            currentUser={currentUser}
+            tickets={supportTickets}
+            onSubmitTicket={handleSubmitSupportTicket}
+            onCloseTicket={handleCloseSupportTicket}
+            isAdmin={false}
           />
 
           {/* Information Guide panel */}

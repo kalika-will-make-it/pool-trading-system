@@ -40,10 +40,11 @@ service cloud.firestore {
 
     // 1. User validation helper
     function isValidUser(data) {
-      return data.keys().hasAll(['phoneNumber', 'username', 'email', 'isAdmin', 'wallet', 'createdAt']) 
-        && data.keys().size() == 6
+      return data.keys().hasAll(['phoneNumber', 'username', 'passwordHash', 'email', 'isAdmin', 'wallet', 'createdAt']) 
+        && data.keys().size() == 7
         && data.phoneNumber is string && data.phoneNumber.size() <= 20
         && data.username is string && data.username.size() >= 2 && data.username.size() <= 50
+        && data.passwordHash is string && data.passwordHash.size() <= 100
         && data.email is string && data.email.size() <= 100
         && data.isAdmin is bool
         && data.wallet is map
@@ -99,6 +100,23 @@ service cloud.firestore {
         && data.phoneNumber is string
         && data.requestedAt is string
         && data.status in ['pending', 'approved', 'completed', 'rejected'];
+    }
+
+    // 5. Support Ticket validation helper
+    function isValidSupportTicket(data) {
+      return data.keys().hasAll(['id', 'userId', 'username', 'userEmail', 'subject', 'message', 'status', 'category', 'createdAt', 'adminResponse', 'respondedAt'])
+        && data.keys().size() == 11
+        && data.id is string && data.id.size() <= 64
+        && data.userId is string && data.userId.size() <= 128
+        && data.username is string && data.username.size() <= 100
+        && data.userEmail is string && data.userEmail.size() <= 100
+        && data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 150
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 2000
+        && data.status in ['pending', 'replied', 'closed']
+        && data.category in ['deposit', 'withdrawal', 'investment', 'account', 'other']
+        && data.createdAt is string
+        && data.adminResponse is string && data.adminResponse.size() <= 2000
+        && data.respondedAt is string;
     }
 
     // --- RULES FOR COLLECTION PATHS ---
@@ -191,6 +209,34 @@ service cloud.firestore {
           && incoming().requestedAt == existing().requestedAt
           && existing().status == 'approved'
           && incoming().status == 'completed'
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    // 5. Support Tickets
+    match /support_tickets/{ticketId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn()
+        && isValidId(ticketId)
+        && incoming().userId == request.auth.uid
+        && isValidSupportTicket(incoming())
+        && incoming().status == 'pending'
+        && incoming().adminResponse == ''
+        && incoming().respondedAt == '';
+        
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          existing().userId == request.auth.uid
+          && incoming().userId == existing().userId
+          && isValidSupportTicket(incoming())
+          && incoming().adminResponse == existing().adminResponse
+          && incoming().respondedAt == existing().respondedAt
+          && incoming().status == 'closed'
           && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
         )
       );

@@ -89,6 +89,7 @@ export const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
         phoneNumber: trimmedPhone,
         username: trimmedUsername,
         passwordHash: 'firebase_auth', // Placeholder password field for model compliance
+        email: pendingUser.email || '',
         isAdmin: isEmailAdmin,
         wallet: {
           balance: 0.00, // Balance starts empty to prevent fraud, user deposits real funds

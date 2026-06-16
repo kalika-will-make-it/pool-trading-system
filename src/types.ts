@@ -23,6 +23,7 @@ export interface UserAccount {
   phoneNumber: string;
   username: string;
   passwordHash: string;
+  email: string;
   isAdmin: boolean;
   wallet: UserWallet;
   createdAt: string;
@@ -61,5 +62,19 @@ export interface Withdrawal {
   phoneNumber: string;
   requestedAt: string;
   status: 'pending' | 'approved' | 'completed' | 'rejected';
+}
+
+export interface SupportTicket {
+  id: string;
+  userId: string;
+  username: string;
+  userEmail: string;
+  subject: string;
+  message: string;
+  status: 'pending' | 'replied' | 'closed';
+  category: 'deposit' | 'withdrawal' | 'investment' | 'account' | 'other';
+  createdAt: string;
+  adminResponse: string;
+  respondedAt: string;
 }
 
